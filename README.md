@@ -17,4 +17,4 @@ Use **Fine tuning** to set the repeat width by hand, change smoothing, or widen 
 Pick hidden text, a built-in shape, or upload your own image (bright = near). Choose a generated background (static, pebbles, marble, confetti) or use a photo as the texture, then save the PNG. Supports wall-eyed and cross-eyed output, depth strength, repeat count and output size. Generation uses the symmetric linking method with hidden-surface removal.
 
 ## Hosting
-It is a single static `index.html`. GitHub Pages serves it from the `main` branch root; any static host (Netlify, Cloudflare Pages, a USB stick) works the same way.
+It is a single static `index.html`. A GitHub Actions workflow (`.github/workflows/pages.yml`) deploys it to GitHub Pages on every push to `main` (repo Settings → Pages → Source must be "GitHub Actions"); any static host (Netlify, Cloudflare Pages, a USB stick) works the same way.
