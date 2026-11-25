@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Decode autostereograms from a photo, or make your own from any shape and background.">
+<meta name="theme-color" content="#15191f">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}</style>
+</head>
+<body>
+<title>Hidden Depth</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single working column of instrument-like panels; the picture is always the biggest thing on screen.
+   Accents borrow the red/cyan of stereo anaglyph glasses, used only for state and focus. */
+:root {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --ink: #15191f;
+  --muted: #5b6470;
+  --line: #d6dbe1;
+  --cyan: #0b8ea0;
+  --red: #d2393f;
+  --chip: #e3e7ec;
+  --well: #dfe3e8;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101317; --panel: #181c22; --ink: #e9edf1; --muted: #98a2ae; --line: #2a3039;
+    --cyan: #3cc4d6; --red: #ff6a6f; --chip: #242a32; --well: #0b0d10; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101317; --panel: #181c22; --ink: #e9edf1; --muted: #98a2ae; --line: #2a3039;
+  --cyan: #3cc4d6; --red: #ff6a6f; --chip: #242a32; --well: #0b0d10; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand svg { flex: none; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: 1.6rem; letter-spacing: -0.02em; margin: 0; line-height: 1; }
+.brand small { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 4px; letter-spacing: 0.02em; }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.05rem; margin: 0; text-wrap: balance; }
+.seg { display: inline-flex; background: var(--chip); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button {
+  border: 0; background: transparent; color: var(--muted); font: 500 0.9rem var(--f-body);
+  padding: 7px 14px; border-radius: 8px; cursor: pointer; min-height: 36px;
+}
+.seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.seg.big button { font-size: 1rem; padding: 8px 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.stage { background: var(--well); border-radius: 10px; overflow: hidden; display: grid; place-items: center; min-height: 180px; position: relative; }
+.stage canvas, .stage img { display: block; width: 100%; height: auto; max-width: 100%; }
+.busy { position: absolute; inset: auto 10px 10px auto; font: 500 0.75rem var(--f-mono); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 4px 8px; border: 1px solid var(--line); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row.between { justify-content: space-between; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font: 500 0.92rem var(--f-body); padding: 9px 14px; border-radius: 10px; cursor: pointer; min-height: 42px;
+}
+.btn.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.btn:hover { border-color: var(--muted); }
+button:focus-visible, .btn:focus-within, input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.btn input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+label.btn { position: relative; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat { border-left: 2px solid var(--line); padding-left: 10px; min-width: 0; }
+.stat b { display: block; font: 500 1.15rem var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat span { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.stat.hot { border-left-color: var(--cyan); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > .lbl { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+.field > .lbl output { font-family: var(--f-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--cyan); }
+input[type=text], select {
+  font: 500 1rem var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; width: 100%; min-height: 42px;
+}
+.check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+.check input { accent-color: var(--cyan); width: 18px; height: 18px; }
+.thumb { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; background: var(--well); flex: none; }
+.chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.chips button { border: 2px solid transparent; border-radius: 9px; padding: 0; background: var(--well); cursor: pointer; overflow: hidden; display: flex; flex-direction: column; color: var(--ink); font: 500 0.75rem var(--f-body); }
+.chips button canvas { width: 100%; height: 44px; display: block; }
+.chips button span { padding: 3px 0 4px; }
+.chips button[aria-pressed="true"] { border-color: var(--cyan); }
+.note { font-size: 0.85rem; color: var(--muted); margin: 0; }
+.note.err { color: var(--red); }
+.tips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 760px) { .tips, .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tips p { margin: 4px 0 0; font-size: 0.9rem; color: var(--muted); max-width: 60ch; }
+.tips h3 { margin: 0; font: 600 0.95rem var(--f-body); }
+.eyebrow { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+details summary { cursor: pointer; font-weight: 500; font-size: 0.92rem; }
+details[open] summary { margin-bottom: 12px; }
+details > div { display: flex; flex-direction: column; gap: 14px; }
+.minipreview { width: 96px; border-radius: 6px; background: #000; display: block; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true">
+        <circle cx="13" cy="19" r="9" fill="none" stroke="var(--red)" stroke-width="3"/>
+        <circle cx="25" cy="19" r="9" fill="none" stroke="var(--cyan)" stroke-width="3"/>
+      </svg>
+      <div>
+        <h1>Hidden Depth</h1>
+        <small>Read and make autostereograms</small>
+      </div>
+    </div>
+    <div class="seg big" role="group" aria-label="Mode">
+      <button id="tab-decode" type="button" aria-pressed="true">Decode</button>
+      <button id="tab-create" type="button" aria-pressed="false">Create</button>
+    </div>
+  </header>
+
+  <!-- ============ DECODE ============ -->
+  <section id="view-decode" class="grid">
+    <div class="col">
+      <div class="panel">
+        <div class="row between">
+          <div class="seg" role="group" aria-label="Decoded view">
+            <button type="button" data-dview="depth" aria-pressed="true">Hidden image</button>
+            <button type="button" data-dview="invert" aria-pressed="false">Inverted</button>
+            <button type="button" data-dview="outline" aria-pressed="false">Outline</button>
+          </div>
+          <button class="btn" id="d-save" type="button">Save image</button>
+        </div>
+        <div class="stage"><canvas id="d-out" width="640" height="420"></canvas><span class="busy" id="d-busy" hidden>Decoding…</span></div>
+        <div class="stats">
+          <div class="stat hot"><b id="s-period">–</b><span>Repeat width</span></div>
+          <div class="stat"><b id="s-range">–</b><span>Shift searched</span></div>
+          <div class="stat"><b id="s-size">–</b><span>Analysed at</span></div>
+        </div>
+        <p class="note" id="d-msg">Showing the built-in sample. Take a photo or upload a stereogram to decode your own.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Stereogram</h2>
+        <div class="row">
+          <img class="thumb" id="d-thumb" alt="Source stereogram">
+          <div class="row">
+            <label class="btn primary"><input id="d-camera" type="file" accept="image/*" capture="environment">Take photo</label>
+            <label class="btn"><input id="d-file" type="file" accept="image/*">Upload</label>
+          </div>
+        </div>
+        <p class="note">For photos, hold the phone square to the picture, fill the frame, and avoid glare. A crisp screenshot or scan decodes best.</p>
+      </div>
+      <div class="panel">
+        <details id="d-adv">
+          <summary>Fine tuning</summary>
+          <div>
+            <div class="field">
+              <div class="lbl"><span>Repeat width</span><output id="o-period">auto</output></div>
+              <input type="range" id="d-period" min="20" max="400" value="100">
+              <div class="row"><button class="btn" type="button" id="d-auto">Detect automatically</button></div>
+            </div>
+            <div class="field">
+              <div class="lbl"><span>Smoothing</span><output id="o-win">5</output></div>
+              <input type="range" id="d-win" min="2" max="12" value="5">
+            </div>
+            <div class="field">
+              <div class="lbl"><span>Depth range searched</span><output id="o-range">35%</output></div>
+              <input type="range" id="d-range" min="10" max="50" value="35">
+            </div>
+            <div class="field">
+              <div class="lbl"><span>Detail</span></div>
+              <select id="d-detail">
+                <option value="480">Fast (480 px)</option>
+                <option value="640" selected>Balanced (640 px)</option>
+                <option value="900">Fine (900 px)</option>
+              </select>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CREATE ============ -->
+  <section id="view-create" class="grid" hidden>
+    <div class="col">
+      <div class="panel">
+        <div class="row between">
+          <div class="row" style="gap:10px">
+            <canvas class="minipreview" id="c-depthprev" width="96" height="64" title="Depth map"></canvas>
+            <span class="note">Depth map<br>white = closest</span>
+          </div>
+          <div class="row">
+            <button class="btn" id="c-todecode" type="button">Decode it</button>
+            <button class="btn primary" id="c-save" type="button">Save PNG</button>
+          </div>
+        </div>
+        <div class="stage"><canvas id="c-out" width="1200" height="800"></canvas><span class="busy" id="c-busy" hidden>Rendering…</span></div>
+        <p class="note" id="c-msg">Relax your eyes and look through the picture, as if at something far behind it.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Hidden shape</h2>
+        <div class="seg" role="group" aria-label="Shape source">
+          <button type="button" data-src="text" aria-pressed="true">Text</button>
+          <button type="button" data-src="shape" aria-pressed="false">Shape</button>
+          <button type="button" data-src="upload" aria-pressed="false">Your image</button>
+        </div>
+        <div id="src-text" class="field">
+          <input type="text" id="c-text" value="DEPTH" maxlength="24" aria-label="Hidden text">
+        </div>
+        <div id="src-shape" class="field" hidden>
+          <select id="c-shape" aria-label="Shape">
+            <option value="heart">Heart</option>
+            <option value="star">Star</option>
+            <option value="sphere">Sphere</option>
+            <option value="ring">Ring</option>
+            <option value="pyramid">Stepped pyramid</option>
+            <option value="ripple">Ripples</option>
+          </select>
+        </div>
+        <div id="src-upload" class="field" hidden>
+          <label class="btn"><input id="c-depthfile" type="file" accept="image/*">Choose image</label>
+          <p class="note">Brighter areas come forward. A logo or silhouette on a plain background works well.</p>
+        </div>
+        <label class="check"><input type="checkbox" id="c-invert"> Swap near and far</label>
+        <label class="check"><input type="checkbox" id="c-silhouette"> Flat silhouette (one depth)</label>
+        <div class="field">
+          <div class="lbl"><span>Soften edges</span><output id="o-soft">2</output></div>
+          <input type="range" id="c-soft" min="0" max="10" value="2">
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Background</h2>
+        <div class="chips" id="c-patterns"></div>
+        <div class="row">
+          <select id="c-palette" aria-label="Colours" style="flex:1;width:auto">
+            <option value="reef">Reef</option>
+            <option value="ember">Ember</option>
+            <option value="moss">Moss</option>
+            <option value="mono">Graphite</option>
+            <option value="candy">Candy</option>
+          </select>
+          <button class="btn" type="button" id="c-shuffle">Shuffle</button>
+          <label class="btn"><input id="c-texfile" type="file" accept="image/*">Use photo</label>
+        </div>
+      </div>
+      <div class="panel">
+        <details>
+          <summary>Output settings</summary>
+          <div>
+            <div class="field">
+              <div class="lbl"><span>Size</span></div>
+              <select id="c-size">
+                <option value="800">800 px wide</option>
+                <option value="1200" selected>1200 px wide</option>
+                <option value="1800">1800 px wide</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="lbl"><span>Repeats across the width</span><output id="o-reps">9</output></div>
+              <input type="range" id="c-reps" min="6" max="14" value="9">
+            </div>
+            <div class="field">
+              <div class="lbl"><span>Depth strength</span><output id="o-mu">33%</output></div>
+              <input type="range" id="c-mu" min="12" max="45" value="33">
+            </div>
+            <div class="field">
+              <div class="lbl"><span>Viewing style</span></div>
+              <select id="c-style">
+                <option value="wall">Wall-eyed (look through)</option>
+                <option value="cross">Cross-eyed</option>
+              </select>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="eyebrow">How to see one</span>
+    <div class="tips">
+      <div><h3>Look through it</h3><p>Hold the picture close to your nose so it blurs, then slowly pull it away while keeping your eyes relaxed and unfocused.</p></div>
+      <div><h3>Use a reflection</h3><p>On a glossy screen, focus on your own reflection. The pattern locks into depth behind the glass.</p></div>
+      <div><h3>Or let the app do it</h3><p>Decode matches each strip of the pattern against the next one. Shorter repeats mean nearer surfaces, and that becomes the grey image.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
+
+/* ---------------- shared helpers ---------------- */
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ img, url });
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+    img.src = url;
+  });
+}
+function canvasToBlob(c) { return new Promise((res) => c.toBlob(res, 'image/png')); }
+let downloadsP = null;
+function getDownloads() {
+  if (!downloadsP) downloadsP = (window.claude && window.claude.use) ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+  return downloadsP;
+}
+async function saveCanvas(canvas, filename, msgEl) {
+  const blob = await canvasToBlob(canvas);
+  const dl = await getDownloads();
+  if (dl) {
+    try { await dl.save({ filename, data: blob }); msgEl.textContent = 'Saved ' + filename + '.'; msgEl.classList.remove('err'); return; }
+    catch (e) {
+      if (e && e.code === 'declined') { msgEl.textContent = 'Save cancelled.'; return; }
+      if (e && e.code === 'rate_limited') { msgEl.textContent = 'A save prompt is already open.'; return; }
+    }
+  }
+  // Fallback for hosting outside claude.ai: a normal download link.
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    msgEl.textContent = 'If nothing downloaded, press and hold the picture to save it.';
+  } catch (e) { msgEl.textContent = 'Press and hold the picture to save it.'; }
+}
+function mulberry(seed) { return function() { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/* ---------------- tabs (hash routed) ---------------- */
+function showView(name) {
+  const dec = name !== 'create';
+  $('view-decode').hidden = !dec; $('view-create').hidden = dec;
+  $('tab-decode').setAttribute('aria-pressed', String(dec)); $('tab-create').setAttribute('aria-pressed', String(!dec));
+}
+$('tab-decode').onclick = () => { location.hash = 'decode'; showView('decode'); };
+$('tab-create').onclick = () => { location.hash = 'create'; showView('create'); };
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+
+/* =====================================================================
+   DECODER
+   ===================================================================== */
+const D = { src: null, rgb: null, w: 0, h: 0, period: 0, manual: false, depth: null, outline: null, view: 'depth', job: 0 };
+
+function prepareSource(source) {
+  // Downscale to working width, keep RGB as Float32 planes.
+  const target = +$('d-detail').value;
+  const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
+  const scale = Math.min(1, target / sw);
+  const w = Math.max(64, Math.round(sw * scale)), h = Math.max(32, Math.round(sh * scale));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(source, 0, 0, w, h);
+  const px = g.getImageData(0, 0, w, h).data;
+  const n = w * h, r = new Float32Array(n), gg = new Float32Array(n), b = new Float32Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) { r[i] = px[j]; gg[i] = px[j + 1]; b[i] = px[j + 2]; }
+  // Normalise each channel's contrast so dull photos still match well.
+  for (const ch of [r, gg, b]) {
+    let m = 0; for (let i = 0; i < n; i++) m += ch[i]; m /= n;
+    let v = 0; for (let i = 0; i < n; i++) { const d = ch[i] - m; v += d * d; } v = Math.sqrt(v / n) || 1;
+    const k = 40 / v; for (let i = 0; i < n; i++) ch[i] = (ch[i] - m) * k;
+  }
+  D.rgb = [r, gg, b]; D.w = w; D.h = h;
+}
+
+function shiftCost(s) {
+  // Mean absolute difference between the image and itself shifted by s, over a sample of rows.
+  const { w, h, rgb } = D; const [r, g, b] = rgb;
+  const step = Math.max(1, Math.floor(h / 120));
+  let sum = 0, cnt = 0;
+  for (let y = 0; y < h; y += step) {
+    const o = y * w;
+    for (let x = 0; x + s < w; x += 1) {
+      const i = o + x, j = i + s;
+      sum += Math.abs(r[i] - r[j]) + Math.abs(g[i] - g[j]) + Math.abs(b[i] - b[j]); cnt++;
+    }
+  }
+  return sum / Math.max(1, cnt);
+}
+
+function estimatePeriod() {
+  const { w } = D;
+  const lo = Math.max(12, Math.floor(w / 22)), hi = Math.floor(w / 2.6);
+  const cost = new Float32Array(hi + 2);
+  for (let s = lo - 1; s <= hi + 1; s++) cost[s] = shiftCost(s);
+  // Baseline: typical cost of unrelated shifts.
+  let best = lo, bv = Infinity;
+  for (let s = lo; s <= hi; s++) if (cost[s] < bv) { bv = cost[s]; best = s; }
+  let mean = 0; for (let s = lo; s <= hi; s++) mean += cost[s]; mean /= (hi - lo + 1);
+  // Prefer the shortest repeat: a multiple of the period also matches well.
+  for (let k = 4; k >= 2; k--) {
+    const c = Math.round(best / k);
+    if (c < lo) continue;
+    let lbest = c, lv = Infinity;
+    for (let s = Math.max(lo, c - 3); s <= Math.min(hi, c + 3); s++) if (cost[s] < lv) { lv = cost[s]; lbest = s; }
+    if (lv - bv < (mean - bv) * 0.25) { best = lbest; bv = lv; break; }
+  }
+  const quality = mean > 0 ? 1 - bv / mean : 0;
+  return { period: best, quality };
+}
+
+async function decode() {
+  if (!D.rgb) return;
+  const job = ++D.job;
+  $('d-busy').hidden = false;
+  await tick();
+  const { w, h, rgb } = D; const [R, G, B] = rgb; const n = w * h;
+  let quality = 1;
+  if (!D.manual) { const est = estimatePeriod(); D.period = est.period; quality = est.quality; }
+  const P = D.period;
+  const rangePct = +$('d-range').value / 100;
+  const sMin = Math.max(4, Math.round(P * (1 - rangePct))), sMax = Math.min(w - 8, Math.round(P * 1.08) + 1);
+  const rad = +$('d-win').value;
+  const bestC = new Float32Array(n).fill(Infinity), bestS = new Float32Array(n).fill(P);
+  const prevC = new Float32Array(n).fill(Infinity), beforeC = new Float32Array(n), afterC = new Float32Array(n).fill(Infinity);
+  const diff = new Float32Array(n), integ = new Float64Array((w + 1) * (h + 1));
+  const W1 = w + 1;
+  let t0 = performance.now();
+  for (let s = sMin; s <= sMax; s++) {
+    // per-pixel colour difference to the pixel s to the right
+    for (let y = 0; y < h; y++) {
+      const o = y * w;
+      for (let x = 0; x < w; x++) {
+        const i = o + x;
+        if (x + s < w) { const j = i + s; diff[i] = Math.abs(R[i] - R[j]) + Math.abs(G[i] - G[j]) + Math.abs(B[i] - B[j]); }
+        else diff[i] = diff[i - 1] || 0; // right strip: reuse neighbour
+      }
+    }
+    // integral image -> box sum
+    for (let y = 0; y < h; y++) {
+      let rowSum = 0; const o = y * w, io = (y + 1) * W1, ip = y * W1;
+      for (let x = 0; x < w; x++) { rowSum += diff[o + x]; integ[io + x + 1] = integ[ip + x + 1] + rowSum; }
+    }
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - rad), y1 = Math.min(h, y + rad + 1);
+      const a0 = y0 * W1, a1 = y1 * W1, o = y * w;
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - rad), x1 = Math.min(w, x + rad + 1);
+        const c = (integ[a1 + x1] - integ[a0 + x1] - integ[a1 + x0] + integ[a0 + x0]) / ((y1 - y0) * (x1 - x0));
+        const i = o + x;
+        if (bestS[i] === s - 1 && bestC[i] !== Infinity) afterC[i] = c;
+        if (c < bestC[i]) { beforeC[i] = prevC[i]; bestC[i] = c; bestS[i] = s; afterC[i] = Infinity; }
+        prevC[i] = c;
+      }
+    }
+    if (performance.now() - t0 > 40) { await tick(); if (job !== D.job) return; t0 = performance.now(); }
+  }
+  // sub-pixel refine and convert to nearness
+  const near = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = bestS[i]; const a = beforeC[i], c = afterC[i], b = bestC[i];
+    if (isFinite(a) && isFinite(c) && s > sMin && s < sMax) { const den = a - 2 * b + c; if (den > 1e-6) s += Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)); }
+    near[i] = sMax - s;
+  }
+  // Flat, untextured areas (a wall around a photo, a margin) match every shift; push them to the background.
+  const grad = new Float32Array(n);
+  for (let i = 0; i < n - 1; i++) grad[i] = Math.abs(R[i] - R[i + 1]) + Math.abs(G[i] - G[i + 1]) + Math.abs(B[i] - B[i + 1]);
+  const energy = boxBlur(grad, w, h, rad);
+  const es = Array.from(energy.filter((_, i) => i % 37 === 0)).sort((p, q) => p - q);
+  const eLim = es[Math.floor(es.length / 2)] * 0.25;
+  const ns = Array.from(near.filter((_, i) => i % 37 === 0)).sort((p, q) => p - q);
+  const floor = ns[Math.floor(ns.length * 0.05)];
+  for (let i = 0; i < n; i++) if (energy[i] < eLim) near[i] = floor;
+  const med = median3(near, w, h);
+  D.depth = normalise(med);
+  // outline view: raw difference at the base period, lightly blurred
+  const out = new Float32Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, xx = Math.min(w - 1, x + P), j = y * w + xx;
+    out[i] = Math.abs(R[i] - R[j]) + Math.abs(G[i] - G[j]) + Math.abs(B[i] - B[j]);
+  }
+  D.outline = normalise(boxBlur(out, w, h, 1));
+  if (job !== D.job) return;
+  $('d-busy').hidden = true;
+  $('s-period').textContent = P + ' px';
+  $('s-range').textContent = sMin + '–' + sMax;
+  $('s-size').textContent = w + '×' + h;
+  $('d-period').max = String(Math.floor(w / 2));
+  $('d-period').value = String(P);
+  $('o-period').textContent = D.manual ? P + ' px' : 'auto · ' + P + ' px';
+  if (!D.manual && quality < 0.12) { $('d-msg').textContent = 'No clear repeat found. This may not be a stereogram, or the photo is blurred or tilted. Try a straighter photo, or set the repeat width by hand.'; $('d-msg').classList.add('err'); }
+  else if ($('d-msg').classList.contains('err')) { $('d-msg').classList.remove('err'); $('d-msg').textContent = 'Decoded. Switch views above, or fine tune if the shape looks noisy.'; }
+  renderDecoded();
+}
+
+function median3(a, w, h) {
+  const out = new Float32Array(a.length), v = new Float32Array(9);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let k = 0;
+    for (let dy = -1; dy <= 1; dy++) { const yy = Math.min(h - 1, Math.max(0, y + dy)); for (let dx = -1; dx <= 1; dx++) { const xx = Math.min(w - 1, Math.max(0, x + dx)); v[k++] = a[yy * w + xx]; } }
+    v.sort(); out[y * w + x] = v[4];
+  }
+  return out;
+}
+function boxBlur(a, w, h, r) {
+  if (r <= 0) return a;
+  const tmp = new Float32Array(a.length), out = new Float32Array(a.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let d = -r; d <= r; d++) { const xx = x + d; if (xx >= 0 && xx < w) { s += a[y * w + xx]; c++; } } tmp[y * w + x] = s / c; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let d = -r; d <= r; d++) { const yy = y + d; if (yy >= 0 && yy < h) { s += tmp[yy * w + x]; c++; } } out[y * w + x] = s / c; }
+  return out;
+}
+function normalise(a) {
+  // stretch between 2nd and 98th percentile
+  const sample = []; const step = Math.max(1, Math.floor(a.length / 20000));
+  for (let i = 0; i < a.length; i += step) sample.push(a[i]);
+  sample.sort((p, q) => p - q);
+  const lo = sample[Math.floor(sample.length * 0.02)], hi = sample[Math.floor(sample.length * 0.98)];
+  const k = hi > lo ? 1 / (hi - lo) : 0; const out = new Float32Array(a.length);
+  for (let i = 0; i < a.length; i++) out[i] = Math.max(0, Math.min(1, (a[i] - lo) * k));
+  return out;
+}
+function renderDecoded() {
+  if (!D.depth) return;
+  const c = $('d-out'); c.width = D.w; c.height = D.h;
+  const g = c.getContext('2d'); const img = g.createImageData(D.w, D.h); const d = img.data;
+  const src = D.view === 'outline' ? D.outline : D.depth; const inv = D.view === 'invert';
+  for (let i = 0, j = 0; i < src.length; i++, j += 4) { let v = src[i]; if (inv) v = 1 - v; v = Math.round(v * 255); d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255; }
+  g.putImageData(img, 0, 0);
+}
+document.querySelectorAll('[data-dview]').forEach((b) => b.onclick = () => {
+  D.view = b.dataset.dview;
+  document.querySelectorAll('[data-dview]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderDecoded();
+});
+async function setDecodeSource(source, label) {
+  D.src = source; D.manual = false;
+  $('d-thumb').src = source.src || (source.toDataURL ? source.toDataURL('image/jpeg', 0.6) : '');
+  prepareSource(source);
+  $('d-msg').classList.remove('err');
+  $('d-msg').textContent = label;
+  await decode();
+}
+async function onDecodeFile(e) {
+  const f = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try { const { img } = await loadImageFromFile(f); await setDecodeSource(img, 'Decoded your image. Switch views above, or fine tune if the shape looks noisy.'); }
+  catch (err) { $('d-msg').textContent = err.message; $('d-msg').classList.add('err'); }
+}
+$('d-camera').onchange = onDecodeFile; $('d-file').onchange = onDecodeFile;
+let dTimer = 0; const redecode = () => { clearTimeout(dTimer); dTimer = setTimeout(decode, 180); };
+$('d-period').oninput = () => { D.manual = true; D.period = +$('d-period').value; $('o-period').textContent = D.period + ' px'; redecode(); };
+$('d-auto').onclick = () => { D.manual = false; decode(); };
+$('d-win').oninput = () => { $('o-win').textContent = $('d-win').value; redecode(); };
+$('d-range').oninput = () => { $('o-range').textContent = $('d-range').value + '%'; redecode(); };
+$('d-detail').onchange = () => { if (D.src) { const m = D.manual; prepareSource(D.src); D.manual = false; decode(); } };
+$('d-save').onclick = () => saveCanvas($('d-out'), D.view === 'invert' ? 'decoded-inverted.png' : D.view === 'outline' ? 'decoded-outline.png' : 'decoded.png', $('d-msg'));
+
+/* =====================================================================
+   GENERATOR
+   ===================================================================== */
+const PALETTES = {
+  reef:  ['#073b4c', '#118ab2', '#06d6a0', '#ffd166', '#ef476f', '#f8f4e3'],
+  ember: ['#2b0f0e', '#7a1f1a', '#d1495b', '#edae49', '#f6d8ae', '#3d2c2e'],
+  moss:  ['#1b2d1f', '#3a5a40', '#588157', '#a3b18a', '#dad7cd', '#6b4f2c'],
+  mono:  ['#111111', '#3b3b3b', '#6e6e6e', '#a5a5a5', '#d8d8d8', '#f5f5f5'],
+  candy: ['#ff99c8', '#fcf6bd', '#d0f4de', '#a9def9', '#e4c1f9', '#5c4d7d'],
+};
+const PATTERNS = ['dots', 'pebbles', 'marble', 'confetti'];
+const PATTERN_LABEL = { dots: 'Static', pebbles: 'Pebbles', marble: 'Marble', confetti: 'Confetti' };
+const C = { src: 'text', pattern: 'pebbles', seed: 7, depthImg: null, texImg: null, job: 0 };
+try { const s = JSON.parse(store.get('hd-create') || 'null'); if (s) { if (PATTERNS.includes(s.pattern)) C.pattern = s.pattern; if (PALETTES[s.palette]) $('c-palette').value = s.palette; } } catch (e) {}
+
+function hexToRgb(h) { const v = parseInt(h.slice(1), 16); return [v >> 16 & 255, v >> 8 & 255, v & 255]; }
+
+function makeTexture(kind, w, h, palName, seed) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); const pal = PALETTES[palName] || PALETTES.reef; const rnd = mulberry(seed * 9973 + w);
+  const pick = () => pal[Math.floor(rnd() * pal.length)];
+  // draw something at x and wrapped copies so the tile is seamless horizontally
+  const wrap = (fn, x, r) => { fn(x); if (x - r < 0) fn(x + w); if (x + r > w) fn(x - w); };
+  if (kind === 'dots') {
+    const img = g.createImageData(w, h); const d = img.data; const cols = pal.map(hexToRgb);
+    const cell = 2;
+    for (let y = 0; y < h; y += cell) for (let x = 0; x < w; x += cell) {
+      const col = cols[Math.floor(rnd() * cols.length)];
+      for (let yy = y; yy < Math.min(h, y + cell); yy++) for (let xx = x; xx < Math.min(w, x + cell); xx++) { const j = (yy * w + xx) * 4; d[j] = col[0]; d[j + 1] = col[1]; d[j + 2] = col[2]; d[j + 3] = 255; }
+    }
+    g.putImageData(img, 0, 0);
+  } else if (kind === 'pebbles') {
+    g.fillStyle = pal[0]; g.fillRect(0, 0, w, h);
+    const count = Math.round(w * h / 60);
+    for (let i = 0; i < count; i++) {
+      const x = rnd() * w, y = rnd() * h, r = 2 + rnd() * rnd() * w * 0.11;
+      g.fillStyle = pick();
+      wrap((xx) => { g.beginPath(); g.arc(xx, y, r, 0, Math.PI * 2); g.fill(); }, x, r);
+    }
+  } else if (kind === 'confetti') {
+    g.fillStyle = pal[5] || pal[0]; g.fillRect(0, 0, w, h);
+    const count = Math.round(w * h / 45);
+    for (let i = 0; i < count; i++) {
+      const x = rnd() * w, y = rnd() * h, L = 3 + rnd() * w * 0.09, T = 1.5 + rnd() * 3, a = rnd() * Math.PI;
+      g.fillStyle = pick();
+      wrap((xx) => { g.save(); g.translate(xx, y); g.rotate(a); g.fillRect(-L / 2, -T / 2, L, T); g.restore(); }, x, L);
+    }
+  } else { // marble: warped bands from value noise, periodic in x
+    const img = g.createImageData(w, h); const d = img.data; const cols = pal.map(hexToRgb);
+    const gw = 6, gh = Math.max(2, Math.round(h / w * 6)); const grid = [];
+    for (let i = 0; i < gw * (gh + 1); i++) grid.push(rnd());
+    const noise = (u, v) => { // u wraps over gw
+      const x0 = Math.floor(u), y0 = Math.floor(v), fx = u - x0, fy = v - y0;
+      const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      const at = (i, j) => grid[(((j % (gh + 1)) + (gh + 1)) % (gh + 1)) * gw + (((i % gw) + gw) % gw)];
+      const a = at(x0, y0), b = at(x0 + 1, y0), c2 = at(x0, y0 + 1), e = at(x0 + 1, y0 + 1);
+      return (a + (b - a) * sx) * (1 - sy) + (c2 + (e - c2) * sx) * sy;
+    };
+    const fine = []; for (let i = 0; i < w * 3; i++) fine.push(rnd());
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const u = x / w * gw, v = y / w * 6;
+      const n1 = noise(u, v) + 0.5 * noise(u * 2, v * 2) + 0.25 * noise(u * 4 + 1, v * 4);
+      let t = Math.sin((x / w * 4 + y / w * 2.2 + n1 * 3.2) * Math.PI);
+      t = (t + 1) / 2 + (fine[(x + y * 7) % fine.length] - 0.5) * 0.25; // grain helps matching
+      const k = Math.max(0, Math.min(cols.length - 1, Math.floor(t * cols.length)));
+      const col = cols[k]; const j = (y * w + x) * 4; d[j] = col[0]; d[j + 1] = col[1]; d[j + 2] = col[2]; d[j + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+  return c;
+}
+
+function drawShape(g, kind, W, H) {
+  // returns via canvas pixels: white = near
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.36;
+  if (kind === 'heart') {
+    g.fillStyle = '#fff'; g.beginPath();
+    const s = R / 16;
+    for (let t = 0; t <= Math.PI * 2 + 0.01; t += 0.02) {
+      const x = 16 * Math.pow(Math.sin(t), 3), y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      const px = cx + x * s, py = cy - y * s - R * 0.05; t === 0 ? g.moveTo(px, py) : g.lineTo(px, py);
+    }
+    g.fill();
+  } else if (kind === 'star') {
+    g.fillStyle = '#fff'; g.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? R * 0.45 : R * 1.05; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 1.0 + R * 0.08); }
+    g.closePath(); g.fill();
+  } else {
+    const img = g.getImageData(0, 0, W, H); const d = img.data;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const dx = (x - cx) / R, dy = (y - cy) / R, r = Math.hypot(dx, dy); let v = 0;
+      if (kind === 'sphere') v = r < 1 ? Math.sqrt(1 - r * r) : 0;
+      else if (kind === 'ring') { const q = (r - 0.72) / 0.28; v = Math.abs(q) < 1 ? Math.sqrt(1 - q * q) : 0; }
+      else if (kind === 'pyramid') { const m = Math.max(Math.abs(dx), Math.abs(dy)); v = m < 1.1 ? Math.ceil((1.1 - m) / 1.1 * 5) / 5 : 0; }
+      else if (kind === 'ripple') { const rr = Math.hypot((x - cx) / (W * 0.5), (y - cy) / (W * 0.5)); v = rr < 1 ? (0.5 + 0.5 * Math.cos(rr * Math.PI * 7)) * (1 - rr) : 0; }
+      const b = Math.round(v * 255); const j = (y * W + x) * 4; d[j] = d[j + 1] = d[j + 2] = b; d[j + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+}
+
+function buildDepth(W, H, P) {
+  // Depth map lives in the area to the right of the first repeat strip, with a margin.
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  const bx = Math.round(P * 0.9), by = Math.round(H * 0.08), bw = W - bx * 2, bh = H - by * 2;
+  if (C.src === 'text') {
+    const text = ($('c-text').value || ' ').toUpperCase();
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let size = bh * 0.62; g.font = '800 ' + size + 'px "Bricolage Grotesque", "Arial Black", sans-serif';
+    const tw = g.measureText(text).width; if (tw > bw) { size *= bw / tw; g.font = '800 ' + size + 'px "Bricolage Grotesque", "Arial Black", sans-serif'; }
+    g.fillText(text, W / 2, H / 2 + size * 0.04);
+  } else if (C.src === 'shape') {
+    const sc = document.createElement('canvas'); sc.width = bw; sc.height = bh;
+    drawShape(sc.getContext('2d', { willReadFrequently: true }), $('c-shape').value, bw, bh);
+    g.drawImage(sc, bx, by);
+  } else if (C.depthImg) {
+    const im = C.depthImg, iw = im.naturalWidth, ih = im.naturalHeight, k = Math.min(bw / iw, bh / ih);
+    const dw = iw * k, dh = ih * k;
+    // transparent areas should read as far: draw on black
+    g.drawImage(im, bx + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh);
+  }
+  const px = g.getImageData(0, 0, W, H).data; const n = W * H; let z = new Float32Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) z[i] = (0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]) / 255;
+  if (C.src === 'upload' && C.depthImg) { // background of a photo: assume corners are "far"
+    const corner = (z[0] + z[W - 1] + z[n - W] + z[n - 1]) / 4; if (corner > 0.5 && !$('c-invert').checked) { /* light background: invert so the subject comes forward */ for (let i = 0; i < n; i++) z[i] = 1 - z[i]; }
+    // keep outside the box at far
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < bx || x >= bx + bw || y < by || y >= by + bh) z[y * W + x] = 0;
+  }
+  if ($('c-silhouette').checked) for (let i = 0; i < n; i++) z[i] = z[i] > 0.35 ? 1 : 0;
+  if ($('c-invert').checked) for (let i = 0; i < n; i++) z[i] = 1 - z[i];
+  const soft = +$('c-soft').value;
+  if (soft > 0) { z = boxBlur(z, W, H, soft); z = boxBlur(z, W, H, soft); }
+  return z;
+}
+
+async function generate() {
+  const job = ++C.job; $('c-busy').hidden = false; await tick();
+  const W = +$('c-size').value, H = Math.round(W * 0.66);
+  const P = Math.round(W / +$('c-reps').value);
+  const mu = +$('c-mu').value / 100, E = 2 * P;
+  const cross = $('c-style').value === 'cross';
+  let z = buildDepth(W, H, P);
+  // depth preview
+  const pv = $('c-depthprev'); pv.height = Math.round(pv.width * H / W); const pg = pv.getContext('2d');
+  const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const tg = tmp.getContext('2d');
+  const timg = tg.createImageData(W, H); for (let i = 0; i < W * H; i++) { const v = Math.round(z[i] * 255); timg.data[i * 4] = timg.data[i * 4 + 1] = timg.data[i * 4 + 2] = v; timg.data[i * 4 + 3] = 255; } tg.putImageData(timg, 0, 0);
+  pg.drawImage(tmp, 0, 0, pv.width, pv.height);
+  if (cross) { const z2 = new Float32Array(z.length); for (let i = 0; i < z.length; i++) z2[i] = 1 - z[i]; z = z2; }
+  // texture
+  let tex;
+  if (C.pattern === 'photo' && C.texImg) {
+    const im = C.texImg, th = Math.max(1, Math.round(im.naturalHeight * P / im.naturalWidth));
+    tex = document.createElement('canvas'); tex.width = P; tex.height = th; tex.getContext('2d').drawImage(im, 0, 0, P, th);
+  } else tex = makeTexture(C.pattern === 'photo' ? 'pebbles' : C.pattern, P, H, $('c-palette').value, C.seed);
+  const tw = tex.width, th = tex.height; const tdat = tex.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, tw, th).data;
+  const out = $('c-out'); out.width = W; out.height = H; const og = out.getContext('2d');
+  const oimg = og.createImageData(W, H); const od = oimg.data;
+  const same = new Int32Array(W), pix = new Int32Array(W);
+  const sep = (zz) => Math.round((1 - mu * zz) * E / (2 - mu * zz));
+  let t0 = performance.now();
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) same[x] = x;
+    for (let x = 0; x < W; x++) {
+      const zx = z[row + x], s = sep(zx);
+      let left = x - (s >> 1), right = left + s;
+      if (left < 0 || right >= W) continue;
+      // hidden surface removal
+      let visible = true, t = 1, zt;
+      do {
+        zt = zx + 2 * (2 - mu * zx) * t / (mu * E);
+        const a = x - t, b = x + t;
+        if (a < 0 || b >= W) break;
+        visible = z[row + a] < zt && z[row + b] < zt; t++;
+      } while (visible && zt < 1);
+      if (!visible) continue;
+      let k = same[left];
+      while (k !== left && k !== right) {
+        if (k < right) left = k; else { left = right; right = k; }
+        k = same[left];
+      }
+      same[left] = right;
+    }
+    const ty = y % th;
+    for (let x = W - 1; x >= 0; x--) {
+      const j = (row + x) * 4;
+      if (same[x] === x) { const ti = (ty * tw + (x % tw)) * 4; od[j] = tdat[ti]; od[j + 1] = tdat[ti + 1]; od[j + 2] = tdat[ti + 2]; }
+      else { const q = (row + same[x]) * 4; od[j] = od[q]; od[j + 1] = od[q + 1]; od[j + 2] = od[q + 2]; }
+      od[j + 3] = 255;
+    }
+    if (performance.now() - t0 > 40) { await tick(); if (job !== C.job) return; t0 = performance.now(); }
+  }
+  if (job !== C.job) return;
+  og.putImageData(oimg, 0, 0);
+  $('c-busy').hidden = true;
+  return out;
+}
+
+// pattern chips
+function buildChips() {
+  const box = $('c-patterns'); box.textContent = '';
+  const list = C.texImg ? PATTERNS.concat('photo') : PATTERNS;
+  for (const p of list) {
+    const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-pressed', String(C.pattern === p));
+    const cv = document.createElement('canvas'); cv.width = 120; cv.height = 44;
+    const cg = cv.getContext('2d');
+    if (p === 'photo') { cg.drawImage(C.texImg, 0, 0, 120, 44); }
+    else { const t = makeTexture(p, 60, 44, $('c-palette').value, C.seed); cg.drawImage(t, 0, 0); cg.drawImage(t, 60, 0); }
+    const sp = document.createElement('span'); sp.textContent = p === 'photo' ? 'Your photo' : PATTERN_LABEL[p];
+    b.append(cv, sp);
+    b.onclick = () => { C.pattern = p; saveCreatePrefs(); buildChips(); regen(); };
+    box.appendChild(b);
+  }
+}
+function saveCreatePrefs() { store.set('hd-create', JSON.stringify({ pattern: C.pattern === 'photo' ? 'pebbles' : C.pattern, palette: $('c-palette').value })); }
+let cTimer = 0; const regen = () => { clearTimeout(cTimer); cTimer = setTimeout(generate, 120); };
+document.querySelectorAll('[data-src]').forEach((b) => b.onclick = () => {
+  C.src = b.dataset.src;
+  document.querySelectorAll('[data-src]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  $('src-text').hidden = C.src !== 'text'; $('src-shape').hidden = C.src !== 'shape'; $('src-upload').hidden = C.src !== 'upload';
+  if (C.src === 'upload' && !C.depthImg) { $('c-msg').textContent = 'Choose an image to use as the hidden shape.'; return; }
+  regen();
+});
+$('c-text').oninput = regen; $('c-shape').onchange = regen;
+$('c-invert').onchange = regen; $('c-silhouette').onchange = regen;
+$('c-soft').oninput = () => { $('o-soft').textContent = $('c-soft').value; regen(); };
+$('c-palette').onchange = () => { saveCreatePrefs(); buildChips(); regen(); };
+$('c-shuffle').onclick = () => { C.seed = Math.floor(Math.random() * 1e6); buildChips(); regen(); };
+$('c-size').onchange = regen; $('c-style').onchange = regen;
+$('c-reps').oninput = () => { $('o-reps').textContent = $('c-reps').value; regen(); };
+$('c-mu').oninput = () => { $('o-mu').textContent = $('c-mu').value + '%'; regen(); };
+$('c-depthfile').onchange = async (e) => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const { img } = await loadImageFromFile(f); C.depthImg = img; $('c-msg').classList.remove('err'); $('c-msg').textContent = 'Using your image as the hidden shape.'; regen(); }
+  catch (err) { $('c-msg').textContent = err.message; $('c-msg').classList.add('err'); }
+};
+$('c-texfile').onchange = async (e) => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const { img } = await loadImageFromFile(f); C.texImg = img; C.pattern = 'photo'; buildChips(); regen(); }
+  catch (err) { $('c-msg').textContent = err.message; $('c-msg').classList.add('err'); }
+};
+$('c-save').onclick = () => saveCanvas($('c-out'), 'stereogram.png', $('c-msg'));
+$('c-todecode').onclick = async () => {
+  const src = $('c-out'); const copy = document.createElement('canvas'); copy.width = src.width; copy.height = src.height; copy.getContext('2d').drawImage(src, 0, 0);
+  location.hash = 'decode'; showView('decode');
+  await setDecodeSource(copy, 'Decoding the stereogram you just made.');
+};
+
+/* ---------------- start ---------------- */
+showView(location.hash.slice(1));
+buildChips();
+(async () => {
+  try { await document.fonts.load('800 40px "Bricolage Grotesque"'); } catch (e) {}
+  await generate();
+  // Sample for the decoder: the same stereogram, so the first screen shows a real decode.
+  const src = $('c-out'); const copy = document.createElement('canvas'); copy.width = src.width; copy.height = src.height; copy.getContext('2d').drawImage(src, 0, 0);
+  await setDecodeSource(copy, 'Showing a built-in sample. Take a photo or upload a stereogram to decode your own.');
+})();
+})();
+</script>
+
+</body>
+</html>
