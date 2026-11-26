@@ -1,5 +1,8 @@
 # NotSoMagicEye
 
+<!-- site-screenshot: docs/screenshot.jpg -->
+![Screenshot of NotSoMagicEye](docs/screenshot.jpg)
+
 A phone-friendly web app for autostereograms (the "hidden 3D picture" posters). Everything runs in the browser; no images leave your device.
 
 **Live site:** https://mendus59.github.io/NotSoMagicEye/
